@@ -100,6 +100,12 @@ td.chgcell{text-align:right;font-variant-numeric:tabular-nums;font-size:12.5px}
 .up{color:var(--ok);font-weight:700}.down{color:var(--warn);font-weight:700}
 footer{margin-top:30px;padding-top:16px;font-size:11.5px;color:rgba(27,6,56,.5);text-align:center;font-family:'Exo 2'}
 footer b{color:var(--purple)}
+
+.subpanel{margin:14px 18px;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.subpanel-h{font-family:'Exo',sans-serif;font-weight:600;font-size:14px;padding:10px 14px;background:#FAFAFC;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;color:var(--purple)}
+.subpanel-h .count{margin-left:auto;font-family:'Exo 2';font-size:11px;color:var(--muted);font-weight:400}
+.subpanel table{font-size:13px}
+.subpanel tfoot td{padding:8px 14px}
 </style></head><body><div class="wrap">
 <header><div class="brand"><svg viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#fff" stop-opacity=".95"/><stop offset="100%" stop-color="#fff" stop-opacity=".8"/></linearGradient></defs><path d="M20 50 L35 25 L40 35 L55 20 L60 30 L50 55 L40 45 L30 60 Z" fill="url(#bg)"/></svg><div><h1>Försäljningsdashboard</h1><p>Innovative · återförsäljare · alltid senaste siffrorna</p></div></div>
 <div class="tabs"><button class="on" data-t="b2b">B2B</button><button data-t="b2c">B2C</button></div></header>
@@ -345,23 +351,38 @@ function viewDaglig(d){
   const filtered=dates.filter(inRange);
   const byMonth={};
   for(const dt of filtered){const ym=dt.slice(0,7);(byMonth[ym]=byMonth[ym]||[]).push(dt);}
+  // Per-group aggregations: group -> date -> count
   const sales={},anger={},nek={};
-  for(const[g,s,dt,n]of d.sales){if(!matchSearch(s)||!inRange(dt))continue;sales[dt]=(sales[dt]||0)+n;}
-  for(const[g,s,dt,n]of d.anger){if(!matchSearch(s)||!inRange(dt))continue;anger[dt]=(anger[dt]||0)+n;}
-  if(d.hasNekade)for(const[g,s,dt,n]of d.nekade){if(!matchSearch(s)||!inRange(dt))continue;nek[dt]=(nek[dt]||0)+n;}
-  const sections=Object.keys(byMonth).sort().reverse().map(ym=>{
-    const days=byMonth[ym].sort().reverse();
-    const rows=days.map(dt=>{const so=sales[dt]||0,an=anger[dt]||0,ne=nek[dt]||0;const dayName=['sön','mån','tis','ons','tors','fre','lör'][new Date(dt).getDay()];
-      return `<tr><td class="lft">${dt} <span class="dayname">${dayName}</span></td><td>${fmt(so)}</td><td class="${an>0?'warn':''}">${fmt(an)}</td>${d.hasNekade?`<td class="${ne>0?'warn':''}">${fmt(ne)}</td>`:''}<td class="netcell">${fmt(so-an-ne)}</td></tr>`;}).join('');
-    const tot=days.reduce((a,dt)=>{a.so+=sales[dt]||0;a.an+=anger[dt]||0;a.ne+=nek[dt]||0;return a;},{so:0,an:0,ne:0});
-    const [y,m]=ym.split('-');const ymLabel=MNAMES[Number(m)]+' '+y;
-    return `<div class="panel"><div class="panel-h">${ymLabel}<span class="count">${days.length} dagar</span></div>
-      <table><thead><tr><th class="lft">Datum</th><th>Sålt</th><th>Ånger</th>${d.hasNekade?'<th>Nekade</th>':''}<th>Netto</th></tr></thead>
-      <tbody>${rows}</tbody>
-      <tfoot><tr><td class="lft">Summa ${ymLabel}</td><td>${fmt(tot.so)}</td><td>${fmt(tot.an)}</td>${d.hasNekade?`<td>${fmt(tot.ne)}</td>`:''}<td class="netcell">${fmt(tot.so-tot.an-tot.ne)}</td></tr></tfoot></table></div>`;
-  }).join('');
-  const emptyMsg=filtered.length===0?'<div class="panel"><div class="empty-pad">Ingen aktivitet i valt datumintervall</div></div>':'';
-  return `<h2 class="sec-title">Daglig aktivitet</h2>${dateFilter(min,max)}<p class="note">Aktivitet per dag, grupperat per månad${state.search?' – filtrerat på "'+state.search+'"':''}.</p>${sections}${emptyMsg}`;
+  for(const g of d.groups){sales[g]={};anger[g]={};nek[g]={};}
+  for(const[g,s,dt,n]of d.sales){if(!matchSearch(s)||!inRange(dt))continue;sales[g][dt]=(sales[g][dt]||0)+n;}
+  for(const[g,s,dt,n]of d.anger){if(!matchSearch(s)||!inRange(dt))continue;anger[g][dt]=(anger[g][dt]||0)+n;}
+  if(d.hasNekade)for(const[g,s,dt,n]of d.nekade){if(!matchSearch(s)||!inRange(dt))continue;nek[g][dt]=(nek[g][dt]||0)+n;}
+  // helper: build a panel for one group OR for total
+  const buildPanel=(grpKey,label,grad)=>{
+    const sectionRows=Object.keys(byMonth).sort().reverse().map(ym=>{
+      const days=byMonth[ym].sort().reverse();
+      const getVal=(map,dt)=>{
+        if(grpKey==='__total__'){let t=0;for(const g of d.groups)t+=(map[g]||{})[dt]||0;return t;}
+        return (map[grpKey]||{})[dt]||0;
+      };
+      const dayRows=days.map(dt=>{
+        const so=getVal(sales,dt),an=getVal(anger,dt),ne=d.hasNekade?getVal(nek,dt):0;
+        const dayName=['sön','mån','tis','ons','tors','fre','lör'][new Date(dt).getDay()];
+        return `<tr><td class="lft">${dt} <span class="dayname">${dayName}</span></td><td>${fmt(so)}</td><td class="${an>0?'warn':''}">${fmt(an)}</td>${d.hasNekade?`<td class="${ne>0?'warn':''}">${fmt(ne)}</td>`:''}<td class="netcell">${fmt(so-an-ne)}</td></tr>`;
+      }).join('');
+      const tot=days.reduce((a,dt)=>{a.so+=getVal(sales,dt);a.an+=getVal(anger,dt);a.ne+=d.hasNekade?getVal(nek,dt):0;return a;},{so:0,an:0,ne:0});
+      const [y,m]=ym.split('-');const ymLabel=MNAMES[Number(m)]+' '+y;
+      return `<div class="subpanel"><div class="subpanel-h">${ymLabel}<span class="count">${days.length} dagar</span></div>
+        <table><thead><tr><th class="lft">Datum</th><th>Sålt</th><th>Ånger</th>${d.hasNekade?'<th>Nekade</th>':''}<th>Netto</th></tr></thead>
+        <tbody>${dayRows}</tbody>
+        <tfoot><tr><td class="lft">Summa ${ymLabel}</td><td>${fmt(tot.so)}</td><td>${fmt(tot.an)}</td>${d.hasNekade?`<td>${fmt(tot.ne)}</td>`:''}<td class="netcell">${fmt(tot.so-tot.an-tot.ne)}</td></tr></tfoot></table></div>`;
+    }).join('');
+    return `<div class="panel"><div class="panel-h"><span class="grpdot" style="background:${grad}"></span>${label}</div>${sectionRows||'<div class="empty-pad">Ingen aktivitet i valt datumintervall</div>'}</div>`;
+  };
+  const totalGrad='linear-gradient(135deg,#1B0638 0%,#461886 100%)';
+  const groupPanels=d.groups.map(g=>buildPanel(g,lbl(g),GRAD[g])).join('');
+  const totalPanel=buildPanel('__total__','Totalt',totalGrad);
+  return `<h2 class="sec-title">Daglig aktivitet</h2>${dateFilter(min,max)}<p class="note">Aktivitet per dag, grupperat per månad och affärsområde${state.search?' – filtrerat på "'+state.search+'"':''}.</p>${totalPanel}${groupPanels}`;
 }
 
 function viewNC(d){
@@ -424,7 +445,8 @@ function viewManad(d){
 
 function viewTrend(d){
   const dates=allDates(d);const max=dates[dates.length-1]||'2026-05-28',min=dates[0]||'2026-05-01';
-  if(!state.from){state.from=max.slice(0,8)+'01';state.to=max;}
+  // Default: show all months (not just current month)
+  if(!state.from){state.from=min;state.to=max;}
   const fromYM=Number(state.from.slice(0,4)+state.from.slice(5,7)),toYM=Number(state.to.slice(0,4)+state.to.slice(5,7));
   const inRange=dt=>dt>=state.from&&dt<=state.to;
   const monthsSet=new Set();d.sales.forEach(r=>monthsSet.add(Number(r[2].slice(0,4)+r[2].slice(5,7))));
@@ -553,7 +575,12 @@ function render(){
 }
 
 function wire(d){
-  document.querySelectorAll('.sidenav button').forEach(b=>b.onclick=()=>{SEC=b.dataset.s;render();});
+  document.querySelectorAll('.sidenav button').forEach(b=>b.onclick=()=>{
+    const newSec=b.dataset.s;
+    // When entering Trender, reset to all-time so older months are visible
+    if(newSec==='trend'){const dates=allDates(d);if(dates.length){state.from=dates[0];state.to=dates[dates.length-1];}}
+    SEC=newSec;render();
+  });
   const f=document.getElementById('from'),t=document.getElementById('to');
   if(f)f.onchange=e=>{state.from=e.target.value;if(state.to<state.from)state.to=state.from;render();};
   if(t)t.onchange=e=>{state.to=e.target.value;if(state.from>state.to)state.from=state.to;render();};
