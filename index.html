@@ -426,7 +426,9 @@ function viewNC(d){
   const months=allMonths(d);if(!state.month)state.month=months[months.length-1];const sel=state.month;
   const tbl=ag=>{const rs=(d.nc||[]).filter(r=>r[0]===ag&&r[2]===sel&&matchSearch(r[1]));
     let rows=rs.map(r=>({namn:r[1],avtal:r[4],snitt:r[4]?Math.round(r[3]/r[4]):0}));
-    sortKey=sortKey==='netto'?'snitt':sortKey;sortRows(rows);
+    // Local sort: NC view defaults to 'snitt' if global is netto-related
+    const localKey=(sortKey==='netto')?'snitt':sortKey;
+    rows.sort((a,b)=> localKey==='namn'?String(a.namn).localeCompare(String(b.namn),'sv')*(-sortDir):((a[localKey]||0)-(b[localKey]||0))*sortDir);
     const allrs=(d.nc||[]).filter(r=>r[0]===ag&&r[2]===sel);
     const tot=allrs.reduce((a,r)=>{a.s+=r[3];a.c+=r[4];return a;},{s:0,c:0});
     const cols=[{k:'namn',t:'Säljare',lft:1},{k:'avtal',t:'Avtal'},{k:'snitt',t:'Snitt NC',fmt:kr}];
@@ -439,7 +441,9 @@ function viewCohort(d,kind){
   const isAng=kind==='anger';
   const tbl=g=>{const rs=(d.cohort||[]).filter(r=>r[0]===g&&r[2]===sel&&matchSearch(r[1]));
     let rows=rs.map(r=>{const sold=r[3],ev=isAng?r[4]:r[5];return{namn:r[1],sold,ev,netto:sold-ev,pct:sold?ev/sold:null};});
-    sortKey=(sortKey==='snitt')?'netto':sortKey;sortRows(rows);
+    // Local sort: cohort view uses netto by default (if global is 'snitt' from NC etc.)
+    const localKey=(sortKey==='snitt')?'netto':sortKey;
+    rows.sort((a,b)=> localKey==='namn'?String(a.namn).localeCompare(String(b.namn),'sv')*(-sortDir):((a[localKey]||0)-(b[localKey]||0))*sortDir);
     const allrs=(d.cohort||[]).filter(r=>r[0]===g&&r[2]===sel);
     const tot=allrs.reduce((a,r)=>{a.sold+=r[3];a.ev+=(isAng?r[4]:r[5]);return a;},{sold:0,ev:0});
     const cols=[{k:'namn',t:'Säljare',lft:1},{k:'sold',t:'Sålt'},{k:'ev',t:isAng?'Ånger':'Nekade',warn:1},{k:'netto',t:'Netto',net:1},{k:'pct',t:isAng?'Ånger %':'Nekade %',fmt:v=>v==null?'–':(v*100).toFixed(1)+' %'}];
