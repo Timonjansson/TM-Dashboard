@@ -548,18 +548,22 @@ function viewNettoB2B(d,mode){
   }
   const tbl=ag=>{const {sales,anger,nek}=isInne?gatherInnevarande(ag):gatherTotalt(ag);
     const names=new Set([...Object.keys(sales),...Object.keys(anger),...(hasNek?Object.keys(nek):[])]);
-    let rows=[...names].filter(matchSearch).map(s=>{const so=sales[s]||0,an=anger[s]||0,ne=hasNek?(nek[s]||0):0;return{namn:s,so,an,ne,netto:so-an-ne};});
-    rows=rows.filter(r=>r.netto>=1);
+    let allRows=[...names].filter(matchSearch).map(s=>{const so=sales[s]||0,an=anger[s]||0,ne=hasNek?(nek[s]||0):0;return{namn:s,so,an,ne,netto:so-an-ne};});
+    // Total räknas från ALLA säljare (även de med netto < 1)
+    const tot=allRows.reduce((a,r)=>{a.so+=r.so;a.an+=r.an;a.ne+=r.ne;a.netto+=r.netto;return a;},{so:0,an:0,ne:0,netto:0});
+    // Visa endast säljare med netto >= 1
+    let rows=allRows.filter(r=>r.netto>=1);
     sortRows(rows);
-    const tot=rows.reduce((a,r)=>{a.so+=r.so;a.an+=r.an;a.ne+=r.ne;a.netto+=r.netto;return a;},{so:0,an:0,ne:0,netto:0});
+    const hidden=allRows.length-rows.length;
     const cols=[{k:'namn',t:'Säljare',lft:1},{k:'so',t:'Sålt'},{k:'an',t:'Ånger',warn:1}];
     if(hasNek)cols.push({k:'ne',t:'Nekade',warn:1});
     cols.push({k:'netto',t:'Netto',net:1});
-    return `<div class="panel"><div class="panel-h"><span class="grpdot" style="background:${GRAD[ag]}"></span>${lbl(ag)} – Netto ${isInne?'innevarande':'totalt'}<span class="count">${rows.length} st</span></div>${tableHTML(cols,rows,{namn:'Total',so:tot.so,an:tot.an,ne:tot.ne,netto:tot.netto})}</div>`;};
+    const countLabel=hidden>0?`${rows.length} st (${hidden} dolda)`:`${rows.length} st`;
+    return `<div class="panel"><div class="panel-h"><span class="grpdot" style="background:${GRAD[ag]}"></span>${lbl(ag)} – Netto ${isInne?'innevarande':'totalt'}<span class="count">${countLabel}</span></div>${tableHTML(cols,rows,{namn:'Total',so:tot.so,an:tot.an,ne:tot.ne,netto:tot.netto})}</div>`;};
   const title=isInne?'Netto Innevarande':'Netto Totalt';
   const desc=isInne
-    ?`Avtal sålda i ${mlabel(sel)} och hur många av <b>just dessa</b> som ångrats${hasNek?' eller fått nekad portering':''} (kohortvy). Visar endast säljare med netto ≥ 1.`
-    :`Avtal sålda i ${mlabel(sel)} och alla ångringar${hasNek?'/nekade porteringar':''} <b>registrerade i ${mlabel(sel)}</b> – oavsett när avtalen ursprungligen såldes. Visar endast säljare med netto ≥ 1.`;
+    ?`Avtal sålda i ${mlabel(sel)} och hur många av <b>just dessa</b> som ångrats${hasNek?' eller fått nekad portering':''} (kohortvy). Säljare med netto under 1 göms men räknas i Total.`
+    :`Avtal sålda i ${mlabel(sel)} och alla ångringar${hasNek?'/nekade porteringar':''} <b>registrerade i ${mlabel(sel)}</b> – oavsett när avtalen ursprungligen såldes. Säljare med netto under 1 göms men räknas i Total.`;
   return `<h2 class="sec-title">${title} (${mlabel(sel)})</h2>${monthBar(months)}<p class="note">${desc}</p><div class="tables">${d.groups.map(tbl).join('')}</div>`;
 }
 
